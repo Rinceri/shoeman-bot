@@ -5,18 +5,6 @@ from asyncpg import Pool
 from helper.objects import Shoe, ViewHelper, Player, Event
 from config import sd
 
-# views (
-#             id SERIAL PRIMARY KEY,
-#             guild_id BIGINT NOT NULL,
-#             message_id BIGINT NOT NULL,
-#             created_on TIMESTAMP WITH TIME ZONE,
-#             used_users BIGINT[]
-# events (
-#             guild_id BIGINT PRIMARY KEY,
-#             pos_given INT NOT NULL,
-#             channel_id BIGINT PRIMARY KEY
-#         );
-
 # IMPORTANT
 # records to view tables can only be added/removed 
 # ... when creating first giveaway in a guild

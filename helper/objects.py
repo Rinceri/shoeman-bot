@@ -4,72 +4,6 @@ from discord.utils import utcnow
 from datetime import timedelta
 from numpy.random import normal
 
-"""
-EVENT PLAN
-
-this is a simple event that is an indicator of the activity in the server.
-
-every 12 hours, a message will appear, that will have a button active for 12 hours
-
-Clicking this button gives you a pair of shoes.
-
-For this server:
-
-Only 3 POS would drop per 12 hours (restricting one player to only one POS)
-
-Sell this POS. The selling cost would fluctuate like the stock market (on some days good price, other days bad price).
-
-That is it as of now.
-"""
-
-"""
-Programmable features:
-
-1. Number of POS given every time interval
-2. Time interval XXXXX
-3. End event
-"""
-
-"""
-Classes:
-
-Player class
-    INIT
-    MODIFY_BALANCE
-    SHOW_PROFILE
-
-Shoe Class
-    MODIFY_POS
-    GET_PRICE
-
-Event Class
-    START_EVENT
-    MODIFY_EVENT
-    END_EVENT
-    SEND_MSG
-"""
-
-"""
-players
-    user_id,
-    guild_id,
-    balance,
-    pos
-
-shoes
-    price_date,
-    price
-
-events
-    guild_id
-    pos_given
-    channel_id
-
-views
-"""
-
-#################
-
 
 class Player:
     def __init__(self, user_id: int, guild_id: int, pool: Pool) -> None:
@@ -196,9 +130,9 @@ class Shoe:
         """
         last_change = await pool.fetchval("SELECT price_date FROM shoes ORDER BY price_date DESC LIMIT 1")
         
-        # if difference between time now and last change is greater than 24 hours (ie last pos happened more than 24 hours ago)
+        # if difference between time now and last change is greater than 12 hours (ie last pos happened more than 12 hours ago)
         # ... return True
-        return (utcnow() - last_change) >= timedelta(hours = 24)
+        return (utcnow() - last_change) >= timedelta(hours = 12)
 
     @staticmethod
     async def get_price_history(pool: Pool, count:int = 10, date = None):
@@ -374,13 +308,6 @@ class Event:
         return embed
 
 
-#             id SERIAL PRIMARY KEY,
-#             channel_id BIGINT NOT NULL,
-#             message_id BIGINT NOT NULL,
-#             created_on TIMESTAMP WITH TIME ZONE,
-#             used_users BIGINT[]
-
-
 class ViewHelper:
     def __init__(self, pool: Pool, message_id: int, channel_id: int, id: int, used_users) -> None:
         self.pool = pool
@@ -405,7 +332,7 @@ class ViewHelper:
         Useful for task which creates POS messages every 12 hours
         """
         # checks where NOW - created_on is greater than/= 12 hours (ie happened 12 hours ago atleast)
-        overdue_views = await pool.fetch("SELECT * FROM views WHERE (NOW() - created_on) >= INTERVAL '30 minutes'")
+        overdue_views = await pool.fetch("SELECT * FROM views WHERE (NOW() - created_on) >= INTERVAL '12 hours'")
         
         return overdue_views
              
@@ -461,8 +388,3 @@ class ViewHelper:
         Checks whether max pos reached.
         """
         return len(self.used_users) >= pos_given
-
-
-
-
-##################
