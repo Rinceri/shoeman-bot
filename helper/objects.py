@@ -1,9 +1,9 @@
 from asyncpg import Pool
-from discord import Embed, TextChannel, Guild
+from discord import Embed, TextChannel, Guild, Colour
 from discord.utils import utcnow
 from datetime import timedelta
 from numpy.random import normal
-
+from config import VIEW_INTERVAL_HRS, PRICE_CHANGE_HRS, EMBED_COLOUR, sd 
 
 class Player:
     def __init__(self, user_id: int, guild_id: int, pool: Pool) -> None:
@@ -114,6 +114,7 @@ class Player:
 
         # create embed
         embed = Embed(
+            colour = Colour.from_str(EMBED_COLOUR),
             title = "Player profile",
             description = f"**Pairs of shoes owned:** {pos}\n**Credts:** {bal}"    
         )
@@ -132,7 +133,7 @@ class Shoe:
         
         # if difference between time now and last change is greater than 12 hours (ie last pos happened more than 12 hours ago)
         # ... return True
-        return (utcnow() - last_change) >= timedelta(hours = 12)
+        return (utcnow() - last_change) >= timedelta(hours = PRICE_CHANGE_HRS)
 
     @staticmethod
     async def get_price_history(pool: Pool, count:int = 10, date = None):
@@ -147,34 +148,25 @@ class Shoe:
         return price_history
     
     @staticmethod
-    async def set_price(pool: Pool, *, upper_limit: float = None, new_price = None) -> float:
+    async def set_price(pool: Pool, new_price = None) -> float:
         """
-        Set price for current time. Either set new_price or upper_limit
+        Set price for current time.
 
         new_price is for setting price manually, for owner command
         
         For setting price automatically (i.e. from bg task):
-        It will use the price last set as the base price. upper limit is the 
-        standard deviation for the normal distribution for change
-        returns new price
+        It will use the price last set as the base price. 
+        Using normal distribution for change, and adding to base, returns new price
         """
-        # making sure method returns None if both args are None
-        price = None
-
-        if upper_limit is not None:
-            # getting value of change
-            mu, sigma = 0.0, upper_limit
-            change = normal(mu, sigma)
-
+        if new_price is None:
+            change = normal(0.0, sd)
             base = await pool.fetchval("SELECT price FROM shoes ORDER BY price_date DESC LIMIT 1")
-
             price = base + change
-        
-        elif new_price is not None:
+            
+        else:
             price = new_price
 
-        if price is not None:
-            await pool.execute("INSERT INTO shoes (price) VALUES ($1)", price)
+        await pool.execute("INSERT INTO shoes (price) VALUES ($1)", price)
 
         return price
     
@@ -296,14 +288,31 @@ class Event:
         Returns embed of top 10 players
         """
         records = await self.get_player_records()
-        embed = Embed(description = "Sorted by balance:\n")
-        truncated = records[:10] if len(records) > 9 else records
+        embed = Embed(
+            title = "Leaderboard (top 10)", 
+            timestamp = utcnow(),
+            colour = Colour.from_str(EMBED_COLOUR)
+        )
 
-        for record in truncated:
-            embed.description += "{0} - {1}\n".format(
+        # no players registered for this guild 
+        if records == []:
+            embed.description = "There are no players playing here..."
+            return embed
+
+        embed.description = ""
+        embed.set_footer(text = "Sorted by balance")
+
+        for position, record in enumerate(records, start = 1):
+            embed.description += "{0}. {1} - **{2} coins and {3} shoes**\n".format(
+                position,
                 guild.get_member(record['user_id']).mention, 
-                record['balance']
+                int(record['balance']),
+                record['pos']
             )
+
+            # 10 players reached
+            if position >= 10:
+                break
 
         return embed
 
@@ -331,8 +340,12 @@ class ViewHelper:
 
         Useful for task which creates POS messages every 12 hours
         """
+        if isinstance(VIEW_INTERVAL_HRS, int):
+            # NOTE: this is very dangerous.
+            query = "SELECT * FROM views WHERE (NOW() - created_on) >= INTERVAL '{0} hours'".format(VIEW_INTERVAL_HRS)
+
         # checks where NOW - created_on is greater than/= 12 hours (ie happened 12 hours ago atleast)
-        overdue_views = await pool.fetch("SELECT * FROM views WHERE (NOW() - created_on) >= INTERVAL '12 hours'")
+        overdue_views = await pool.fetch(query)
         
         return overdue_views
              

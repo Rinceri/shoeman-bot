@@ -4,8 +4,8 @@ from discord.ext import commands
 from asyncpg import Pool
 
 from typing import Optional
-import traceback
 
+from config import EMBED_COLOUR, PRICE_CHANGE_HRS
 from helper.objects import Player, Event, Shoe
 
 class UserCommands(commands.Cog):
@@ -51,14 +51,17 @@ class UserCommands(commands.Cog):
 
     @app_commands.command(
         name = "price",
-        description = "Get the price for today and last 5 days"
+        description = "Get the price history for last 5 changes"
     )
     async def show_price_history(self, itx: discord.Interaction):
         """
         Show the price history: last 6 records
         """
         prices = await Shoe.get_price_history(self.pool, 6)
-        embed = discord.Embed(description = "")
+        embed = discord.Embed(
+            colour = discord.Colour.from_str(EMBED_COLOUR),
+            description = ""
+        )
 
         for record in prices:
             price = round(record['price'], 2)
@@ -66,6 +69,8 @@ class UserCommands(commands.Cog):
 
             embed.description += f"- `{price}` coins on {date}\n"
         
+        embed.set_footer(text = "Price changes every ~{} hours".format(PRICE_CHANGE_HRS))
+
         await itx.response.send_message(embed = embed)
 
     @app_commands.command(
