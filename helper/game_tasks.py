@@ -3,7 +3,6 @@ from discord.ext import commands
 from asyncpg import Pool
 
 from helper.objects import Shoe, ViewHelper, Player, Event
-from config import sd
 
 # IMPORTANT
 # records to view tables can only be added/removed 
@@ -12,11 +11,11 @@ from config import sd
 
 async def price_fluct(pool: Pool):
     """
-    Fluctuates price once 24 hours are up
+    Fluctuates price once designated interval is up
     """
     # check last change
     if await Shoe.check_last_change(pool):
-        await Shoe.set_price(pool, upper_limit = sd)
+        await Shoe.set_price(pool)
     
 async def pos_giveaway(bot: commands.Bot, pool: Pool):
     """
