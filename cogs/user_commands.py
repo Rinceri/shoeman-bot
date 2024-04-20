@@ -5,7 +5,7 @@ from asyncpg import Pool
 
 from typing import Optional
 
-from config import EMBED_COLOUR, PRICE_CHANGE_HRS
+from params import EMBED_COLOUR, PRICE_CHANGE_HRS
 from helper.objects import Player, Event, Shoe
 
 class UserCommands(commands.Cog):

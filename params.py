@@ -1,0 +1,7 @@
+first_price = 1000
+mu = 0.0
+sd = 100
+
+PRICE_CHANGE_HRS = 12
+VIEW_INTERVAL_HRS = 12
+EMBED_COLOUR = '#63ab33'
