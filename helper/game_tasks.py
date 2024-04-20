@@ -61,6 +61,81 @@ async def pos_giveaway(bot: commands.Bot, pool: Pool):
         if channel:
             await send_view(pool, channel, bot.my_views)
             
+async def send_shoe_ores(pool: Pool):
+    """
+    Calculates shoes per person based on ore reward, 
+    for each guild that has surpassed a day in last_collect
+    """
+    
+    # get sum of all guilds
+    guild_ores = await pool.fetch("SELECT guild_id, sum(day_ores) AS day_ores FROM players GROUP BY guild_id;")
+
+    # get all players that are in overdue guilds (overdue ie >24 hours)
+    players = await pool.fetch(
+        """
+        SELECT players.* FROM players
+        INNER JOIN events ON players.guild_id = events.guild_id
+        WHERE (NOW() - events.last_collect) >= INTERVAL '24 hours';
+        """
+    )
+
+    # if there are no overdue guilds, just finish the task
+    if players == []:
+        return
+
+    # update guilds with overdue timer
+    # I am doing this update here so there is no delay between fetching and updating
+    await pool.execute(
+        """
+        UPDATE events
+        SET last_collect = NOW()
+        WHERE (NOW() - last_collect) >= INTERVAL '24 hours';
+        """
+    )
+
+    player_frac = 0
+    insert_players = []
+
+    # iterate through all these players
+    for player in players:
+        # just move on if player has no ores
+        if player['day_ores'] == 0:
+            continue
+
+        # get player's fraction of total ores
+        for guild in guild_ores:
+            if guild['guild_id'] == player['guild_id']:
+                # note that we don't check if guild's total ores is not zero
+                # (to prevent division by zero)
+                # we skipped all players who have zero ores, and so any players who go through this section
+                # ... will have >0 ores and hence >0 guild's total ores
+                player_frac = player['day_ores'] / guild['day_ores']
+                    
+                # get total shoes given away
+                shoes = await pool.fetchval("SELECT shoe_ores FROM events WHERE guild_id = $1", player['guild_id'])
+
+                # get player shoes
+                # note that I am not keeping track of total shoes
+                # so it will give away more than total shoes in some situations
+                player_shoes = round(player_frac * shoes)
+
+                # insert to a list of tuples (player_id, guild_id, shoes)
+                # note that players who have 0 ores will not be updated, because there's nothing to update
+                insert_players.append((player_shoes, player['user_id'], player['guild_id']))
+
+                # we found our record, break from guilds loop
+                break
+
+    # update shoes using list of tuples, and reset day_ores to 0
+    await pool.executemany(
+        """
+        UPDATE players
+        SET pos = pos + $1, day_ores = 0
+        WHERE user_id = $2 AND guild_id = $3;
+        """,
+        insert_players
+    )
+
 
 async def send_view(pool: Pool, channel: discord.TextChannel, my_views):
     """

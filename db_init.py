@@ -1,6 +1,7 @@
 import asyncio
 import asyncpg
-from config import connection_uri, first_price
+from config import connection_uri
+from params import first_price
 
 async def main():
     # Establish a connection to an existing database
@@ -40,16 +41,42 @@ async def main():
         '''
     )
 
-    # set first shoe price
-    await conn.execute(
+    # set first shoe price, if no records exist
+    exists = await conn.fetchval(
         '''
-        INSERT INTO shoes (price)
-        VALUES ($1);
-        ''',
-        first_price
+        SELECT EXISTS (SELECT 1 FROM shoes);
+        '''
     )
+
+    if not exists:
+        await conn.execute(
+            """
+            INSERT INTO shoes (price)
+            VALUES ($1);
+            """,
+            first_price
+        )
+    
+    await do_updates(conn)
 
     # Close the connection.
     await conn.close()
 
-asyncio.get_event_loop().run_until_complete(main())
+async def do_updates(conn: asyncpg.connection.Connection):
+    """
+    This function runs all statements that are updates to the game
+    """
+
+    await conn.execute(
+        """
+        ALTER TABLE players
+            ADD COLUMN IF NOT EXISTS day_ores INTEGER DEFAULT 0;
+        
+        ALTER TABLE events
+            ADD COLUMN IF NOT EXISTS last_collect TIMESTAMPTZ DEFAULT NOW(),
+            ADD COLUMN IF NOT EXISTS shoe_ores INTEGER DEFAULT 0; 
+        """
+    )
+
+if __name__ == '__main__':
+    asyncio.get_event_loop().run_until_complete(main())

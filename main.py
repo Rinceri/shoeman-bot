@@ -11,7 +11,8 @@ description = "A game bot by Rinceri"
 extensions = [
     'cogs.owner',
     'cogs.user_commands',
-    'cogs.admin'
+    'cogs.admin',
+    'cogs.mining'
 ]
 
 

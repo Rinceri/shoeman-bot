@@ -70,6 +70,7 @@ class EventCog(commands.GroupCog, name = "event"):
     async def start_event(
         self, itx: discord.Interaction,
         giveaway_shoes: int,
+        shoes_ores: int,
         channel: discord.TextChannel
     ):
         """
@@ -87,7 +88,7 @@ class EventCog(commands.GroupCog, name = "event"):
         await itx.response.defer(thinking = True)
         
         # create event record
-        await Event.create_event(self.pool, itx.guild_id, giveaway_shoes, channel)
+        await Event.create_event(self.pool, itx.guild_id, giveaway_shoes, channel, shoes_ores)
 
         # send view message, store to view table, append to my_views
         await send_view(self.pool, channel, self.bot.my_views)
@@ -143,12 +144,13 @@ class EventCog(commands.GroupCog, name = "event"):
 
     @app_commands.command(
         name = "config",
-        description = "Change the channel given, or shoes to giveaway"
+        description = "Change the channel given, shoes to giveaway from events or ores"
     )
     async def config_event(
         self, itx: discord.Interaction, 
         channel: Optional[discord.TextChannel],
-        giveaway_shoes: Optional[int]
+        giveaway_shoes: Optional[int],
+        ore_shoes: Optional[int]
     ):
         """
         If event exists...
@@ -160,7 +162,7 @@ class EventCog(commands.GroupCog, name = "event"):
             return
         
         event = Event(itx.guild_id, self.pool)
-        changed = await event.modify_details(new_channel = channel, pos_given = giveaway_shoes)
+        changed = await event.modify_details(new_channel = channel, pos_given = giveaway_shoes, shoe_ores = ore_shoes)
     
         if changed:
             embed = await event.get_info()
