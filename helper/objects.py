@@ -1,9 +1,9 @@
 from asyncpg import Pool
 from discord import Embed, TextChannel, Guild, Colour
-from discord.utils import utcnow
+from discord.utils import utcnow, format_dt
 from datetime import timedelta
-from numpy.random import normal
-from config import VIEW_INTERVAL_HRS, PRICE_CHANGE_HRS, EMBED_COLOUR, sd 
+import numpy as np
+from params import VIEW_INTERVAL_HRS, PRICE_CHANGE_HRS, EMBED_COLOUR, mu, sd 
 
 class Player:
     def __init__(self, user_id: int, guild_id: int, pool: Pool) -> None:
@@ -111,15 +111,27 @@ class Player:
         row = await self.__get_details()
         pos = row["pos"]
         bal = round(row["balance"], 2)
+        ores = row['day_ores']
 
         # create embed
         embed = Embed(
             colour = Colour.from_str(EMBED_COLOUR),
             title = "Player profile",
-            description = f"**Pairs of shoes owned:** {pos}\n**Credts:** {bal}"    
+            description = f"**Pairs of shoes owned:** {pos}\n**Credts:** {bal}\n**Ores:** {ores}"    
         )
 
         return embed
+
+    async def add_ores(self, ores: int):
+        """
+        Adds ores to player database
+        """
+        await self.pool.execute("""
+            UPDATE players 
+            SET day_ores = day_ores + $1 
+            WHERE user_id = $2 AND guild_id = $3""",
+            ores, self.user_id, self.guild_id
+        )
 
 class Shoe:
     @staticmethod
@@ -159,7 +171,7 @@ class Shoe:
         Using normal distribution for change, and adding to base, returns new price
         """
         if new_price is None:
-            change = normal(0.0, sd)
+            change = np.random.default_rng().normal(mu, sd)
             base = await pool.fetchval("SELECT price FROM shoes ORDER BY price_date DESC LIMIT 1")
             price = base + change
             
@@ -186,18 +198,19 @@ class Event:
         return exists
     
     @classmethod
-    async def create_event(cls, pool: Pool, guild_id: int, pos_given: int, channel: TextChannel):
+    async def create_event(cls, pool: Pool, guild_id: int, pos_given: int, channel: TextChannel, shoe_ores: int):
         """
         Constructor. ONLY USE IT FOR CREATING NEW EVENT.
 
         `pos_given` is the quantity to be given at each message "event"
         `channel` is where the message is going to be sent
+        `shoe_ores` is how many total shoes given per day to players' ore balance
 
         Note that this does not create the view or send the first event message.
         """
 
-        await pool.execute("INSERT INTO events (guild_id, pos_given, channel_id) VALUES ($1,$2,$3)",
-            guild_id, pos_given, channel.id)
+        await pool.execute("INSERT INTO events (guild_id, pos_given, channel_id, shoe_ores) VALUES ($1,$2,$3,$4)",
+            guild_id, pos_given, channel.id, shoe_ores)
         
         return cls(guild_id, pool)
     
@@ -216,36 +229,57 @@ class Event:
         return await self.pool.fetchval(query, self.guild_id)
     
 
-    async def modify_details(self, *, new_channel: TextChannel = None, pos_given: int = None) -> bool:
+    async def modify_details(self, *, new_channel: TextChannel = None, pos_given: int = None, shoe_ores: int = None) -> bool:
         """
-        Change channel for sending message, or change amount of pos given
+        Change channel for sending message, amount of pos given or shoe ores
         Returns bool whether any details were changed (True) or not (False)
         """
-        if None not in [new_channel, pos_given]:
-            await self.pool.execute("UPDATE events SET channel_id = $1, pos_given = $2 WHERE guild_id = $3", 
-                new_channel.id, pos_given, self.guild_id)
-    
-        elif new_channel is not None:
+        status = False
+        
+        if None not in [new_channel, pos_given, shoe_ores]:
+            await self.pool.execute(
+                """
+                UPDATE events 
+                SET channel_id = $1, 
+                pos_given = $2,
+                shoe_ores = $3
+                WHERE guild_id = $4
+                """, 
+                new_channel.id, pos_given, shoe_ores, self.guild_id
+            )
+            return True
+
+        if new_channel is not None:
             await self.pool.execute("UPDATE events SET channel_id = $1 WHERE guild_id = $2", 
                 new_channel.id, self.guild_id)
+            status = True
 
-        elif pos_given is not None:
+        if pos_given is not None:
             await self.pool.execute("UPDATE events SET pos_given = $1 WHERE guild_id = $2", 
                 pos_given, self.guild_id)
-        # no details provided, return False    
-        else:
-            return False
-        
-        return True
-    
-    async def get_player_records(self):
+            status = True
+
+        if shoe_ores is not None:
+            await self.pool.execute("UPDATE events SET shoe_ores = $1 WHERE guild_id = $2", 
+                shoe_ores, self.guild_id)
+            status = True
+
+        return status
+
+    async def get_player_records(self, field = None):
         """
-        Gets player records for this guild in descending order of field (must be "pos" or "balance")
+        Gets player records for this guild in descending order of "balance" (default) or "ores"
 
         Useful for leaderboards
         """
-        records = await self.pool.fetch("SELECT * FROM players WHERE guild_id = $1 ORDER BY balance DESC",
+        if field == 'ores':
+            db_field = 'day_ores'
+        else:
+            db_field = 'balance'
+
+        records = await self.pool.fetch(f"SELECT * FROM players WHERE guild_id = $1 ORDER BY {db_field} DESC",
             self.guild_id)
+        
         return records
 
     async def end_event(self):
@@ -270,16 +304,20 @@ class Event:
 
     async def get_info(self) -> Embed:
         """
-        Return info for the server in an embed: last_pos, channel, and today's price 
+        Return info for the server in an embed: last_pos, channel, and shoe_ores
         """
         grecord = await self.pool.fetchrow("SELECT * FROM events WHERE guild_id = $1", self.guild_id)
-        sell_price_record = await Shoe.get_price_history(self.pool, count = 1)
-        sell_price = sell_price_record[0]['price']
         channel_id = grecord['channel_id']
         channel = f'<#{channel_id}>'
+        shoe_ores = grecord['shoe_ores']
+        next_collect = timedelta(hours = 24) + grecord['last_collect']
+
 
         em = Embed(title = "Your server info")
-        em.description = f"**Current shoe sell price:** {sell_price}\nChannel: {channel}"
+        em.description = f"Channel: {channel}"
+
+        em.add_field(name = "Shoes given per day based on ores", value = shoe_ores)
+        em.add_field(name = "Next shoe reward (ores)", value = format_dt(next_collect, 'R'))
 
         return em
     
@@ -308,6 +346,38 @@ class Event:
                 guild.get_member(record['user_id']).mention, 
                 int(record['balance']),
                 record['pos']
+            )
+
+            # 10 players reached
+            if position >= 10:
+                break
+
+        return embed
+    
+    async def show_ore_leaderboard(self, guild: Guild) -> Embed:
+        """
+        Returns embed of top 10 players by ore
+        """
+        records = await self.get_player_records("ores")
+        embed = Embed(
+            title = "Ores Leaderboard (top 10)", 
+            timestamp = utcnow(),
+            colour = Colour.from_str(EMBED_COLOUR)
+        )
+
+        # no players registered for this guild 
+        if records == []:
+            embed.description = "There are no players playing here..."
+            return embed
+
+        embed.description = ""
+        embed.set_footer(text = "Sorted by ores")
+
+        for position, record in enumerate(records, start = 1):
+            embed.description += "{0}. {1} - **{2} ores**\n".format(
+                position,
+                guild.get_member(record['user_id']).mention, 
+                record['day_ores'],
             )
 
             # 10 players reached
