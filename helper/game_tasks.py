@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 from asyncpg import Pool
 
+from params import EMBED_COLOUR
+
 from helper.objects import Shoe, ViewHelper, Player, Event
 
 # IMPORTANT
@@ -136,6 +138,23 @@ async def send_shoe_ores(pool: Pool):
         insert_players
     )
 
+async def make_giveaway_embed(pool: Pool, guild_id: int, pos_given: int = None, description: str = None) -> discord.Embed:
+
+    if pos_given is None:
+        pos_given = await Event(guild_id, pool).get_pos_given()
+
+    embed = discord.Embed(
+        colour = discord.Colour.from_str(EMBED_COLOUR),
+        title = "Claim these shoes NOW!",
+        description = "Nobody has claimed it yet!"
+    )
+
+    if description is not None:
+        embed.description = description
+
+    embed.set_footer(text = f"{pos_given} shoes available")
+
+    return embed
 
 async def send_view(pool: Pool, channel: discord.TextChannel, my_views):
     """
@@ -145,7 +164,7 @@ async def send_view(pool: Pool, channel: discord.TextChannel, my_views):
     - Append view object to my_views
     """
     view = GiveawayView(pool)
-    em = discord.Embed(description = "Claim these shoes NOW!!")
+    em = await make_giveaway_embed(pool, channel.guild.id)
 
     # send message in channel with view
     msg = await channel.send(embed = em, view = view)
@@ -182,13 +201,15 @@ class GiveawayView(discord.ui.View):
 
         pos_given = await Event(itx.guild_id, self.pool).get_pos_given()
 
+        # edit giveaway embed to show all claims
+        description = "Claimed by: " + ", ".join([itx.guild.get_member(x).mention for x in self.view.used_users])
+        embed = await make_giveaway_embed(self.pool, itx.guild_id, pos_given, description)
+
         # if limit reached, disable the button
         # note that we dont stop() the view or delete it from record
         # this is so that it is done in the giveaway task
-        # OPTIONAL: send message about disabled button
         if await self.view.limit_reached(pos_given):
             button.disabled = True
-            await itx.response.edit_message(view = self)
-            await itx.followup.send("You got your pair of shoes!", ephemeral = True)
-        else:
-            await itx.response.send_message("You got your pair of shoes!", ephemeral = True)
+
+        await itx.response.edit_message(embed = embed, view = self)
+        await itx.followup.send("You got your pair of shoes!", ephemeral = True)
