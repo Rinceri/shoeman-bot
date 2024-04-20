@@ -123,13 +123,14 @@ class UserCommands(commands.Cog):
         message = await itx.original_response()
         view.msg = await message.fetch()
 
+
 class OfferView(discord.ui.View):
     def __init__(self, 
         owner: Player,
         price: float, shoes: int, 
         pool: Pool
     ):
-        super().__init__(timeout = 10)
+        super().__init__(timeout = 3600)
         
         self.owner = owner
         self.price = price
