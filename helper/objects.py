@@ -133,6 +133,38 @@ class Player:
             ores, self.user_id, self.guild_id
         )
 
+    async def get_pos(self):
+        # get shoes owned
+        return await self.__get_details('pos')
+
+    async def get_balance(self):
+        # get balance of player
+        return await self.__get_details('balance')
+    
+    async def exchange_details(self, dest_player_id: int, source_shoes: int, source_price: float):
+        
+        # increase source player's balance, and reduce shoes owned
+        await self.pool.execute(
+            """
+            UPDATE players 
+            SET balance = balance + $1,
+            pos = pos - $2
+            WHERE user_id = $3 AND guild_id = $4
+            """,
+            source_price, source_shoes, self.user_id, self.guild_id
+        )
+
+        # decrease dest player's balance, and increase shoes owned
+        await self.pool.execute(
+            """
+            UPDATE players 
+            SET balance = balance - $1,
+            pos = pos + $2
+            WHERE user_id = $3 AND guild_id = $4
+            """,
+            source_price, source_shoes, dest_player_id, self.guild_id
+        )
+
 class Shoe:
     @staticmethod
     async def check_last_change(pool: Pool):
