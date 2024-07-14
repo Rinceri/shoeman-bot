@@ -162,6 +162,17 @@ class OfferView(discord.ui.View):
         if player_bal < self.price:
             await itx.response.send_message("You do not have enough money!", ephemeral = True)
             return
+            
+        # we need to check whether owner has the shoes needed for this offer 
+        owner_shoes = await self.owner.get_pos()
+        if owner_shoes < self.shoes:
+            await itx.response.send_message("Owner does not have enough shoes anymore", ephemeral = True)
+            
+            # disable button
+            button.disabled = True
+            await itx.response.edit_message(view = self)
+            self.stop()            
+            return
         
         # increase owner's balance and decrease shoes owned, and vice versa for itx user
         await self.owner.exchange_details(itx.user.id, self.shoes, self.price)
